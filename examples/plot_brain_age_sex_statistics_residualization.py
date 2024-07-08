@@ -124,7 +124,7 @@ from mulm.residualizer import ResidualizerEstimator
 
 lr = linear_model.Ridge(alpha=1)
 scaler = StandardScaler()
-cv = KFold(n_splits=5, random_state=42)
+cv = KFold(n_splits=5)
 
 y_train = demo_train["age"].values
 

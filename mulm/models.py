@@ -13,9 +13,12 @@ Linear models for massive univariate statistics.
 
 import numpy as np
 import scipy
+import nibabel as nib
+from nilearn.masking import apply_mask
 from sklearn.preprocessing import scale
 from scipy import stats
-from .utils import ttest_pval
+from mulm.utils import ttest_pval, ttest_tfce
+from scipy.ndimage import generate_binary_structure
 #from mulm.utils import estimate_se_tstat_pval_ci
 
 class MUPairwiseCorr:
@@ -338,7 +341,91 @@ class MUOLS:
         pvalues = np.array(
             [np.array([np.sum(max_t[:, con] >= t) for t in tvals_[con, :]])\
                 / float(nperms) for con in range(contrasts.shape[0])])
+                
         return tvals, pvalues, df
+    
+    """#############################################################################################################"""
+    
+    def t_test_tfce(self, contrasts, mask, nperms=100, two_tailed=True, **kwargs):
+    
+        contrasts = np.atleast_2d(np.asarray(contrasts))
+        tvals, _, df = self.t_test(contrasts=contrasts, pval=False, **kwargs)
+        print("tvals",tvals.shape)
+
+       # tmap = np.zeros(mask.shap)
+       # tmap[mask] = tvals
+        bin_struct = generate_binary_structure(3, 1)
+        scores_4d = np.zeros(mask.shape + (contrasts.shape[0],))
+        for i in range(contrasts.shape[0]):
+            scores_4d[mask.get_fdata() == 1, i] = tvals[i]
+
+        print("score4d",scores_4d.shape)
+
+        tfce_original_data  = ttest_tfce(
+            scores_4d,
+            bin_struct=bin_struct,
+            two_sided_test= True
+        )
+
+        tfce_original_data = apply_mask(
+            nib.Nifti1Image(
+                tfce_original_data,
+                mask.affine,
+                mask.header,
+            ),
+            mask
+        ).T
+        print("tfce_original_data",tfce_original_data.shape)
+
+
+
+        print(self.Y.shape)
+        h0_tfce_part = np.empty((self.X.shape[1], nperms))
+        print("h0_tfce_part",h0_tfce_part.shape)
+        tfce_scores_as_ranks_parts = np.zeros((self.X.shape[1], self.Y.shape[1]))
+        print("tfce_scores_as_ranks_part",tfce_scores_as_ranks_parts.shape)
+
+
+
+        for i in range(nperms):
+            perm_idx = np.random.permutation(self.X.shape[0])
+            Xp = self.X[perm_idx, :]
+            muols = MUOLS(self.Y, Xp).fit(block=self.block,
+                                        max_elements=self.max_elements)
+            tvals_perm, _, _ = muols.t_test(contrasts=contrasts, pval=False,
+                                            two_tailed=two_tailed)
+            
+            arr_4d = np.zeros(mask.shape + (contrasts.shape[0],))
+            for j in range(contrasts.shape[0]):
+                arr_4d[mask.get_fdata() == 1, j] = tvals_perm[j]
+            bin_struct = generate_binary_structure(3, 1)
+
+            print(i)    
+            h0_tfce_part[:, i] = np.nanmax(
+            np.fabs(
+                ttest_tfce(
+                    arr_4d,
+                    bin_struct=bin_struct,
+                    two_sided_test= True
+                )
+            ),
+            axis=(0, 1, 2),
+            ) 
+          
+            tfce_scores_as_ranks_parts += h0_tfce_part[:, i].reshape(
+                (-1, 1)
+            ) < np.fabs(tfce_original_data.T)
+                        
+            tfce_scores_as_ranks = np.zeros((self.X.shape[1], self.Y.shape[1]))
+            for tfce_scores_as_ranks_part in tfce_scores_as_ranks_parts:
+                tfce_scores_as_ranks += tfce_scores_as_ranks_part
+
+            tfce_pvals = (nperms + 1 - tfce_scores_as_ranks) / float(1 + nperms)    
+            neg_log10_tfce_pvals = -np.log10(tfce_pvals)
+            
+                
+        return neg_log10_tfce_pvals
+        
 
     def t_test_minP(self, contrasts, nperms=10000, two_tailed=True, **kwargs):
         """Correct for multiple comparisons using minP procedure.
