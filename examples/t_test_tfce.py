@@ -83,20 +83,19 @@ plotting.show()
 nifti_masker = NiftiMasker(smoothing_fwhm=5, memory="nilearn_cache", memory_level=1)
 mask = nifti_masker.fit(contrast_map_filenames).mask_img_
 
-target_vars2 = nifti_masker.fit_transform(contrast_map_filenames,mask)
-print(target_vars2)
-# Transform the contrast maps in 2D numpy arrays 
+
+# Transform the contrast maps in 2D numpy arrays (les donnée sont modifiées)
 
 target_vars = []
-
 for i in range(n_samples):
     data = nib.load(contrast_map_filenames[i]).get_fdata()
     masked_data = data[mask.get_fdata() == 1]
     target_vars.append(masked_data)
-
-
 target_vars = np.array(target_vars)
 
+#Transform the contrast maps in 2D numpy arrays (les donnée ne sont pas modifiées av ec les masker nifti)
+
+target_vars2 = nifti_masker.fit_transform(contrast_map_filenames, mask)
 
 
 
@@ -107,7 +106,7 @@ target_vars = np.array(target_vars)
 
 # Normalize the variables on the axis.
 
-targetvars_resid_covars = normalize_matrix_on_axis(target_vars2).T
+targetvars_resid_covars = normalize_matrix_on_axis(target_vars).T
 testedvars_resid_covars = normalize_matrix_on_axis(tested_vars).copy()
 
 
