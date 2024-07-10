@@ -347,26 +347,58 @@ class MUOLS:
     """#############################################################################################################"""
     
     def t_test_tfce(self, contrasts, mask, nperms=100, two_tailed=True, **kwargs):
-    
-        contrasts = np.atleast_2d(np.asarray(contrasts))
-        tvals, _, df = self.t_test(contrasts=contrasts, pval=False, **kwargs)
-        print("tvals",tvals.shape)
+        """
+        Perform multiple comparisons correction using the Threshold-Free Cluster Enhancement (TFCE)
+        based on permutation tests.
 
-       # tmap = np.zeros(mask.shap)
-       # tmap[mask] = tvals
+        Parameters
+        ----------
+        contrasts: array (q,) or list of arrays or 2D array
+            Single contrast (array) or list of contrasts or array of contrasts.
+            The k contrasts to be tested.
+
+        mask: Nifti object
+            Binary mask defining the regions of interest in the data.
+
+        nperms: int, optional (default = 100)
+            Number of permutations for permutation tests.
+
+        two_tailed: boolean, optional (default = True)
+            Indicates whether the test is two-tailed.
+
+        kwargs: additional parameters
+            Additional parameters for the t-test function.
+
+        Returns
+        -------
+        neg_log10_tfce_pvals: 2D array (p,)
+            p-values corrected for multiple comparisons, transformed to -log10 scale.
+        """
+        # Convert contrasts to at least 2D array
+        contrasts = np.atleast_2d(np.asarray(contrasts))
+
+
+
+        # Calculate t-values for contrasts
+        tvals, _, df = self.t_test(contrasts=contrasts, pval=False, **kwargs)
+
+        # Generate binary structure for TFCE
         bin_struct = generate_binary_structure(3, 1)
+
+        # Initialize 4D array for scores
         scores_4d = np.zeros(mask.shape + (contrasts.shape[0],))
         for i in range(contrasts.shape[0]):
+            # Fill scores_4d with t-values where mask is 1
             scores_4d[mask.get_fdata() == 1, i] = tvals[i]
 
-        print("score4d",scores_4d.shape)
-
+        # Compute TFCE  original data
         tfce_original_data  = ttest_tfce(
             scores_4d,
             bin_struct=bin_struct,
             two_sided_test= True
         )
 
+        # Apply mask to TFCE data
         tfce_original_data = apply_mask(
             nib.Nifti1Image(
                 tfce_original_data,
@@ -375,43 +407,44 @@ class MUOLS:
             ),
             mask
         ).T
-        print("tfce_original_data",tfce_original_data.shape)
 
-
-
-        print(self.Y.shape)
+        # Initialize permutation arrays
         h0_tfce_part = np.empty((self.X.shape[1], nperms))
-        print("h0_tfce_part",h0_tfce_part.shape)
         tfce_scores_as_ranks_parts = np.zeros((self.X.shape[1], self.Y.shape[1]))
-        print("tfce_scores_as_ranks_part",tfce_scores_as_ranks_parts.shape)
-
-
 
         for i in range(nperms):
+            print(i)
+            # Generate permuted indices
             perm_idx = np.random.permutation(self.X.shape[0])
+            # Permute X data
             Xp = self.X[perm_idx, :]
-            muols = MUOLS(self.Y, Xp).fit(block=self.block,
-                                        max_elements=self.max_elements)
-            tvals_perm, _, _ = muols.t_test(contrasts=contrasts, pval=False,
-                                            two_tailed=two_tailed)
+            # Fit model with permuted data
+            muols = MUOLS(self.Y, Xp).fit(block=self.block, max_elements=self.max_elements)
+            # Calculate t-values for permuted data
+            tvals_perm, _, _ = muols.t_test(contrasts=contrasts, pval=False, two_tailed=two_tailed)
             
+            # Convert t-values to Fortran array
+            tvals_perm = np.asfortranarray(tvals_perm)
+            
+            # Initialize 4D array for permuted scores
             arr_4d = np.zeros(mask.shape + (contrasts.shape[0],))
             for j in range(contrasts.shape[0]):
+                # Fill arr_4d with permuted t-values where mask is 1
                 arr_4d[mask.get_fdata() == 1, j] = tvals_perm[j]
-            bin_struct = generate_binary_structure(3, 1)
 
-            print(i)    
+            # Compute TFCE on permuted data
             h0_tfce_part[:, i] = np.nanmax(
-            np.fabs(
-                ttest_tfce(
-                    arr_4d,
-                    bin_struct=bin_struct,
-                    two_sided_test= True
-                )
-            ),
-            axis=(0, 1, 2),
+                np.fabs(
+                    ttest_tfce(
+                        arr_4d,
+                        bin_struct=bin_struct,
+                        two_sided_test= True
+                    )
+                ),
+                axis=(0, 1, 2),
             ) 
-          
+        
+            # Rank original TFCE scores against permuted TFCE scores
             tfce_scores_as_ranks_parts += h0_tfce_part[:, i].reshape(
                 (-1, 1)
             ) < np.fabs(tfce_original_data.T)
@@ -420,10 +453,10 @@ class MUOLS:
             for tfce_scores_as_ranks_part in tfce_scores_as_ranks_parts:
                 tfce_scores_as_ranks += tfce_scores_as_ranks_part
 
+            # Calculate p-values and negative log10 p-values
             tfce_pvals = (nperms + 1 - tfce_scores_as_ranks) / float(1 + nperms)    
             neg_log10_tfce_pvals = -np.log10(tfce_pvals)
             
-                
         return neg_log10_tfce_pvals
         
 

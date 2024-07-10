@@ -22,7 +22,7 @@ import numpy as np
 from nilearn import datasets, plotting
 from nilearn.maskers import NiftiMasker
 from nilearn.masking import apply_mask
-from nilearn.image import get_data, threshold_img
+from nilearn.image import get_data, threshold_img, smooth_img
 from nilearn.mass_univariate._utils import normalize_matrix_on_axis
 import nibabel as nib
 import mulm
@@ -64,11 +64,9 @@ tested_vars = tested_vars[mask_quality_check].values.reshape((-1, 1))
 
 img = nib.load(contrast_map_filenames[0])
 plotting.plot_stat_map(img)
-plotting.show()
 
 img_thresh = threshold_img(img, 3.0, two_sided=True)
 plotting.plot_stat_map(img_thresh)
-plotting.show()
 
 
 
@@ -89,28 +87,16 @@ mask = nifti_masker.fit(contrast_map_filenames).mask_img_
 target_vars = []
 for i in range(n_samples):
     data = nib.load(contrast_map_filenames[i]).get_fdata()
+    data = smooth_img(nib.Nifti1Image(data, img.affine), fwhm=5).get_fdata()
     masked_data = data[mask.get_fdata() == 1]
     target_vars.append(masked_data)
 target_vars = np.array(target_vars)
-
-#Transform the contrast maps in 2D numpy arrays (les donnée ne sont pas modifiées av ec les masker nifti)
-
-target_vars2 = nifti_masker.fit_transform(contrast_map_filenames, mask)
-
-
-
-
-
-
 
 
 # Normalize the variables on the axis.
 
 targetvars_resid_covars = normalize_matrix_on_axis(target_vars).T
 testedvars_resid_covars = normalize_matrix_on_axis(tested_vars).copy()
-
-
-
 
 
 ################################################################################
@@ -128,8 +114,7 @@ contrasts = np.identity(X.shape[1])
 mod = mulm.MUOLS(Y, X)
 tvals, rawp, df = mod.fit().t_test(contrasts, pval=True, two_tailed=True)
 
-print(tvals.shape)
-print(tvals)
+
 
 # Apply Bonferroni correction for multiple comparisons.
 num_comparisons = len(rawp)
@@ -143,15 +128,18 @@ for i in range(contrasts.shape[0]):
     p_img[mask.get_fdata() == 1] = pvals_corrected[i]
 p_img = nib.Nifti1Image(p_img, mask.affine)
 plotting.plot_stat_map(p_img)
-plotting.show()
 
 # Convert the t-values into t-maps (niimg).
 scores_4d = np.zeros(mask.shape + (contrasts.shape[0],))
 for i in range(contrasts.shape[0]):
     scores_4d[mask.get_fdata() == 1, i] = tvals[i]
+
+
+
+
+# plot the t-map
 scores_4d_m = nib.Nifti1Image(scores_4d, mask.affine)
 plotting.plot_stat_map(scores_4d_m)
-plotting.show()
 
 
 
@@ -187,15 +175,12 @@ mask_data_bool = mask_data.astype(bool)
 
 tfce_original_data = nib.Nifti1Image(image_data, mask.affine, mask.header)
 
-plotting.plot_stat_map(tfce_original_data)
-plotting.show()
 
 # Empirically chosen threshold.
 threshold = 100000
 thresholded_tfce_original_data = threshold_img(tfce_original_data, threshold)
 plotting.plot_stat_map(thresholded_tfce_original_data)
-plotting.show()
-
+#plotting.show()
 
 ################################################################################
 # Perform the statistical test: Student's t-test with TFCE
