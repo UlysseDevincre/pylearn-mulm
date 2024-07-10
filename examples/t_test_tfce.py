@@ -115,7 +115,7 @@ mod = mulm.MUOLS(Y, X)
 tvals, rawp, df = mod.fit().t_test(contrasts, pval=True, two_tailed=True)
 
 
-
+"""
 # Apply Bonferroni correction for multiple comparisons.
 num_comparisons = len(rawp)
 alpha = 0.05
@@ -182,6 +182,8 @@ thresholded_tfce_original_data = threshold_img(tfce_original_data, threshold)
 plotting.plot_stat_map(thresholded_tfce_original_data)
 #plotting.show()
 
+
+"""
 ################################################################################
 # Perform the statistical test: Student's t-test with TFCE
 # --------------------------------------------------------
