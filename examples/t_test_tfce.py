@@ -213,7 +213,6 @@ for i_col, (title, img) in enumerate(images_to_plot.items()):
         img,
         colorbar=True,
         vmax=vmax,
-        display_mode="z",
         plot_abs=False,
         cut_coords=[12],
         threshold=threshold,
